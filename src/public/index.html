@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Login</title>
+        <script src="func.js"></script>
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            }
+
+            body {
+                min-height: 100vh;
+                background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #fff;
+            }
+
+            .login-container {
+                background: rgba(255, 255, 255, 0.05);
+                padding: 2rem 2.5rem;
+                border-radius: 16px;
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+                width: 100%;
+                max-width: 400px;
+                backdrop-filter: blur(10px);
+            }
+
+            .login-container h2 {
+                text-align: center;
+                margin-bottom: 1.5rem;
+                font-weight: 500;
+            }
+
+            .form-group {
+                margin-bottom: 1rem;
+            }
+
+            .form-group label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-size: 0.95rem;
+            }
+
+            .form-group input {
+                width: 100%;
+                padding: 0.75rem;
+                border: none;
+                border-radius: 8px;
+                background: #fff;
+                color: #000;
+                font-size: 1rem;
+            }
+
+            .form-group input:focus {
+                outline: none;
+                box-shadow: 0 0 0 2px #00bcd4;
+            }
+
+            .btn {
+                margin-top: 1rem;
+                width: 100%;
+                padding: 0.75rem;
+                border: none;
+                border-radius: 8px;
+                background: #00bcd4;
+                color: #fff;
+                font-size: 1rem;
+                font-weight: bold;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+
+            .btn:hover {
+                background: #0097a7;
+            }
+
+            .footer {
+                text-align: center;
+                margin-top: 1rem;
+                font-size: 0.85rem;
+                opacity: 0.7;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="toast" style="
+            position: fixed;
+            top: 5%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(56, 56, 56, 0.807);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            z-index: 9999;
+            pointer-events: none;
+            font-size: 20px;
+        "></div>
+        <div class="login-container">
+            <h2>Welcome Back</h2>
+            <form>
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input id="username" name="username" type="text" placeholder="Enter username" />
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input id="password" name="password" type="password" placeholder="Enter password" />
+                </div>
+                <button class="btn" type="submit" id="login-button">Log In</button>
+            </form>
+        </div>
+    </body>
+    <script>
+        const session = getCookie("session_id");
+        console.log(session);
+        if (session) {
+            fetch(`/api/auth?sid=${session}`, {method: "GET"})
+            .then(res => {
+                if (res.status === 200) {
+                    window.location.href = "dashboard.html";
+                }
+            })
+        }
+
+        document.getElementById("login-button").addEventListener("click", (e) => {
+            e.preventDefault();
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+            fetch(`/api/login`, {
+                method: "POST",
+                headers: {"Content-type": "application/json"},
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => {
+                if (res.status === 200) {
+                    window.location.href = "dashboard.html";
+                }
+                else {
+                    showToast("Invalid credentials")
+                }
+            })
+        })
+    </script>
+</html>
