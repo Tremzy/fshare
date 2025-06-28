@@ -27,7 +27,7 @@
                 display: none;
                 background: rgba(255, 255, 255, 0.05);
                 padding: 2rem;
-                border-radius: 16px;
+                border-radius: 1rem;
                 box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
                 width: 100%;
                 max-width: 80%;
@@ -49,7 +49,7 @@
             .box {
                 background: rgba(255, 255, 255, 0.1);
                 padding: 1.5rem;
-                border-radius: 12px;
+                border-radius: 0.8rem;
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
                 text-align: center;
             }
@@ -106,7 +106,7 @@
             .file-manager {
                 margin-top: 2rem;
                 background: rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
+                border-radius: 0.6rem;
                 max-height: 60vh;
                 display: flex;
                 flex-direction: column;
@@ -170,7 +170,7 @@
                 border: none;
                 color: white;
                 padding: 0.3rem 0.6rem;
-                border-radius: 6px;
+                border-radius: 0.5rem;
                 cursor: pointer;
                 font-size: 0.9rem;
             }
@@ -188,7 +188,7 @@
             .icon-button {
                 background: rgba(255, 255, 255, 0.1);
                 border: none;
-                border-radius: 6px;
+                border-radius: 0.5rem;
                 padding: 0.3rem;
                 cursor: pointer;
                 transition: background 0.2s ease;
@@ -218,10 +218,10 @@
 
             .win-box {
                 background: rgba(255, 255, 255, 0.05);
-                border-radius: 16px;
+                border-radius: 1rem;
                 padding: 2rem;
                 width: 90%;
-                max-width: 500px;
+                max-width: 31rem;
                 box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
                 color: #fff;
                 display: flex;
@@ -248,7 +248,7 @@
             .win-close {
                 cursor: pointer;
                 padding: 0.4rem;
-                border-radius: 8px;
+                border-radius: 0.5rem;
                 transition: background 0.2s ease;
                 color: #ff5252;
                 display: flex;
@@ -271,7 +271,7 @@
                 width: 100%;
                 padding: 0.6rem;
                 border: none;
-                border-radius: 8px;
+                border-radius: 0.6rem;
                 background: rgba(255, 255, 255, 0.1);
                 color: #fff;
                 outline: none;
@@ -287,7 +287,7 @@
                 border: none;
                 color: #fff;
                 padding: 0.6rem 1.2rem;
-                border-radius: 8px;
+                border-radius: 0.6rem;
                 font-weight: bold;
                 cursor: pointer;
                 transition: background 0.2s ease;
@@ -348,7 +348,7 @@
             .upload-btn {
                 padding: 0.75rem 3.5rem;
                 border: none;
-                border-radius: 8px;
+                border-radius: 0.6rem;
                 background: #00bcd4;
                 color: #fff;
                 font-size: 1.2rem;
@@ -365,6 +365,7 @@
                 display: flex;
                 flex-direction: row;
                 justify-content: space-between;
+                white-space: nowrap;
             }
 
             .file-view-method {
@@ -379,7 +380,6 @@
                 display: flex;
                 justify-content: end;
                 box-sizing: border-box;
-                width: 30%;
             }
 
             .switch-grid-system {
@@ -425,8 +425,8 @@
                 background-color: #00bcd4;
                 color: #fff;
                 border: none;
-                width: 50%;
                 cursor: pointer;
+                padding: 0 3rem;
                 transition: 0.3s all ease-out;
             }
 
@@ -472,7 +472,7 @@
 
             .gallery-view-box img, .gallery-view-box video, .gallery-view-box audio {
                 max-width: 100%;
-                max-height: 150px;
+                max-height: 9rem;
                 object-fit: contain;
                 margin-bottom: 1rem;
                 margin: auto;
@@ -516,7 +516,7 @@
                 width: 85%;
                 display: flex;
                 align-items: center;
-                font-size: 22px;
+                font-size: 1.3rem;
                 color: #00bcd4;
                 padding-left: 2rem;
                 overflow: hidden;
@@ -534,7 +534,7 @@
                 width: 3rem;
                 height: 3rem;
                 border-radius: 0.3rem;
-                font-size: 18px;
+                font-size: 1.1rem;
                 cursor: pointer;
                 transition: 0.3s all ease-out;
             }
@@ -574,7 +574,7 @@
                 outline: 2px dashed #00bcd4;
                 outline-offset: -10px;
                 background-color: rgba(0, 188, 212, 0.05);
-                border-radius: 12px;
+                border-radius: 0.8rem;
                 z-index: 5;
                 position: absolute;
                 left: 0;
@@ -591,11 +591,12 @@
                 margin-right: 2rem;
                 padding: 0.3rem;
                 background-color: transparent;
-                font-size: 18px;
+                font-size: 1.1rem;
                 border: 1px solid #0097a7;
                 border-radius: 0.3rem;
                 color: #fff;
                 transition: 0.3s all ease-out;
+                width: 25%;
             }
 
             .search-file:hover {
@@ -611,6 +612,11 @@
             #searchicon {
                 margin: auto 1rem;
                 color: #00bcd4;
+            }
+
+            svg {
+                width: 1.5rem;
+                height: 1.5rem;
             }
 
         </style>
@@ -660,13 +666,13 @@
             transform: translateX(-50%);
             background: rgba(56, 56, 56, 0.807);
             color: #fff;
-            padding: 10px 20px;
+            padding: 1.3rem 1.5rem;
             border-radius: 8px;
             opacity: 0;
             transition: opacity 0.4s ease;
             z-index: 9999;
             pointer-events: none;
-            font-size: 20px;
+            font-size: 1.5rem;
         "></div>
         <div class="dashboard-container">
             <h1 id="user-greet-text">Welcome,</h1>
