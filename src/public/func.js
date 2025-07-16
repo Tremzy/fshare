@@ -201,11 +201,8 @@ function toggleFileView(view) {
 
         for(const li of file_list.children) {
             li.classList.remove("gallery-view-box");
-            li.querySelectorAll("img").forEach(img => {
-                img.remove();
-            })
-            li.querySelectorAll("video").forEach(vid => {
-                vid.remove();
+            li.querySelectorAll("img, video, audio").forEach(media => {
+                media.remove();
             })
             li.style.width = "auto";
         }
