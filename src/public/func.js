@@ -85,7 +85,7 @@ function showToast(message) {
 function showImageInspect(title, path) {
     document.querySelector(".inspect-title").innerText = title;
     const img = document.createElement("img");
-    img.src = path;
+    img.src = path + `?crypto-key=${getCryptoKey()}`;
     document.querySelector(".inspect-body").appendChild(img);
     document.querySelector(".inspect-overlay").style.display = "flex";
 }
@@ -93,10 +93,25 @@ function showImageInspect(title, path) {
 function showVideoInspect(title, path) {
     document.querySelector(".inspect-title").innerText = title;
     const vid = document.createElement("video");
-    vid.src = path;
+    vid.src = path + `?crypto-key=${getCryptoKey()}`;
     vid.setAttribute("controls", "controls")
     document.querySelector(".inspect-body").appendChild(vid);
     document.querySelector(".inspect-overlay").style.display = "flex";
+}
+
+function getCryptoKey() {
+    let key = localStorage.getItem("crypto_key");
+
+    if (!key) {
+        key = prompt("Enter your encryption password:");
+        if (!key) {
+            alert("Encryption key required");
+            return;
+        }
+        localStorage.setItem("crypto_key", key);
+    }
+
+    return key;
 }
 
 function toggleFileView(view) {
@@ -116,7 +131,7 @@ function toggleFileView(view) {
 
         for (const li of file_list.children) {
             li.classList.add("gallery-view-box");
-            const filepath = li.querySelector(".file-actions a").href;
+            const filepath = li.dataset.filepath;
             const ext = filepath.split('.').pop().toLowerCase();
             if (gridStyle === "fluid") {
                 li.style.width = "auto";
@@ -145,9 +160,10 @@ function toggleFileView(view) {
             }
 
             let preview;
+            key = getCryptoKey();
             if (fileType === "video") {
                 preview = document.createElement("video");
-                preview.src = filepath;
+                preview.src = filepath + `?crypto-key=${key}`;
                 preview.onclick = () => {
                     showVideoInspect(filepath.split("/").pop(), filepath);
                 }
@@ -158,10 +174,10 @@ function toggleFileView(view) {
                     showImageInspect(filepath.split("/").pop(), filepath);
                 }
                 preview.style.cursor = "pointer";
-                preview.src = filepath;
+                preview.src = filepath + `?crypto-key=${key}`;
             } else if (fileType === "audio") {
                 preview = document.createElement("audio");
-                preview.src = filepath;
+                preview.src = filepath + `?crypto-key=${key}`;
                 preview.setAttribute("controls", "controls");
             } else if (fileType === "iso") {
                 preview = document.createElement("img");
@@ -240,6 +256,109 @@ function toggleGridStyle(override = false) {
     }
 }
 
+function downloadEncryptedFile(filename, userID) {
+    let key = getCryptoKey();
+    fetch(`/uploads/${userID}/${encodeURIComponent(filename)}`, {
+        headers: {
+            "crypto-key": key
+        }
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Failed to download file");
+        return res.blob();
+    })
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+        console.error(err);
+        alert("Download failed: " + err.message);
+    });
+}
+
+function shareFileWindow(path) {
+    const fileShareWindow = document.getElementById("fileShareWindow");
+    fileShareWindow.style.display = "flex";
+    const filename = path.split("/").pop().split("?")[0];
+    fileShareWindow.dataset.origin = filename;
+    fileShareWindow.querySelector(".input-group input").value = filename;
+}
+
+function sharedFilesWindow() {
+    const sharesTable = document.getElementById("shares-table");
+    sharesTable.querySelector("tbody").innerHTML = "";
+    fetch("/api/usershares", {
+        method: "GET",
+        headers: {
+            session: getCookie("session_id")
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.length == 0) {
+            sharesTable.querySelector("tbody").innerHTML = "no files shared. not even with your imaginary friend.";
+        }
+        data.forEach(e => {
+            const row = document.createElement("tr");
+            row.classList.add("context-target");
+            Object.entries(e).forEach(([key, value]) => {
+                const attr = document.createElement("td");
+                if (key == "created" || key == "expires") {
+                    const timestamp = new Date(value * 1000).toLocaleString();
+                    value = timestamp;
+                }
+                attr.innerHTML = value;
+                row.appendChild(attr);
+                if (key == "id") row.dataset.id = value;
+            })
+            sharesTable.querySelector("tbody").appendChild(row);
+        })
+    })
+}
+
+function revokeSharedFile(sharedId) {
+    fetch("/api/revokeshare", {
+        method: "POST",
+        headers: {
+            session: getCookie("session_id"),
+            id: sharedId
+        }
+    })
+    .then(res => {
+        if (res.status === 200) {
+            sharedFilesWindow();
+            updateStats();
+        }
+    })
+}
+
+function updateStats() {
+    const session = getCookie("session_id");
+    fetch(`/api/userdata?sid=${session}`)
+    .then(res => res.json())
+    .then(data => {
+        const userData = data;
+        document.getElementById("used-total-storage").innerText = `${(userData["used"] / 1024 ** 3).toFixed(2)} GiB / ${(userData["space"] / 1024 ** 3).toFixed(2)} GiB`;
+        document.getElementById("files-uploaded").innerText = `${userData["files"]} files`;
+        document.getElementById("last-login").innerText = `${new Date(userData["last_login"] * 1000).toLocaleString()}`;
+        document.getElementById("files-shared").innerText = `${userData["files_shared"]}`;
+    })
+}
+
+
+
+
+
+
+
+
 
 
 //DASHBOARD CODE
@@ -278,6 +397,7 @@ function toggleGridStyle(override = false) {
                     document.getElementById("used-total-storage").innerText = `${(userData["used"] / 1024 ** 3).toFixed(2)} GiB / ${(userData["space"] / 1024 ** 3).toFixed(2)} GiB`;
                     document.getElementById("files-uploaded").innerText = `${userData["files"]} files`;
                     document.getElementById("last-login").innerText = `${new Date(userData["last_login"] * 1000).toLocaleString()}`;
+                    document.getElementById("files-shared").innerText = `${userData["files_shared"]}`;
                     
                     document.getElementById("fm-list-view").addEventListener("click", () => {
                         toggleFileView("list");
@@ -292,21 +412,13 @@ function toggleGridStyle(override = false) {
                         document.getElementById("selected-file-name").textContent = file ? file.name : "No file selected";
                     });
 
-                    document.getElementById("close-compare-window").addEventListener("click", () => {
-                        document.getElementById("server-side-hash").value = "";
-                        document.getElementById("client-side-hash").value = "";
-                        document.querySelector(".win-main").querySelectorAll("p").forEach(pElement => {
-                            pElement.removeAttribute("style");
-                        })
-                        document.querySelector(".window-overlay").style.display = "none"
-                    })
-
+                    
                     document.querySelector(".inspect-close").addEventListener("click", () => {
                         document.querySelector(".inspect-overlay").style.display = "none";
                         document.querySelector(".inspect-body img, .inspect-body video").remove();
                         document.querySelector(".inspect-title").innerText = "";
                     })
-
+                    
                     document.querySelector(".inspect-overlay").addEventListener("click", (e) => {
                         if (e.target.classList[0] === "inspect-overlay") {
                             document.querySelector(".inspect-overlay").style.display = "none";
@@ -314,19 +426,34 @@ function toggleGridStyle(override = false) {
                             document.querySelector(".inspect-title").innerText = "";
                         }
                     })
+                    
+                    document.getElementById("filesSharedBox").addEventListener("click", () => {
+                        document.getElementById("sharedFilesWindow").style.display = "flex";
+                        sharedFilesWindow();
+                    })
+
+                    const compareHashWindow = document.getElementById("compareHashWindow");
+                    compareHashWindow.querySelector(".win-close").addEventListener("click", () => {
+                        compareHashWindow.querySelector(".server-side input").value = "";
+                        compareHashWindow.querySelector(".client-side input").value = "";
+                        compareHashWindow.querySelector(".win-main").querySelectorAll("p").forEach(pElement => {
+                            pElement.removeAttribute("style");
+                        })
+                        compareHashWindow.style.display = "none"
+                    })
 
                     document.getElementById("compare-hash").addEventListener("click", () => {
-                        document.querySelector(".win-main").querySelectorAll("p").forEach(pElement => {
+                        compareHashWindow.querySelector(".win-main").querySelectorAll("p").forEach(pElement => {
                             pElement.removeAttribute("style");
                         })
                         const ssh = document.getElementById("server-side-hash").value;
                         const csh = document.getElementById("client-side-hash").value;
                         const same = compareHash(ssh, csh);
                         if (same) {
-                            document.getElementById("compare-success").style.display = "flex";
+                            compareHashWindow.getElementById("compare-success").style.display = "flex";
                         }
                         else {
-                            document.getElementById("compare-fail").style.display = "flex";
+                            compareHashWindow.getElementById("compare-fail").style.display = "flex";
                         }
                     })
 
@@ -367,15 +494,112 @@ function toggleGridStyle(override = false) {
                         }
                     });
 
+                    document.getElementById("generate-share-link").addEventListener("click", () => {
+                        const fileShareWindow = document.getElementById("fileShareWindow");
+                        const filename = fileShareWindow.dataset.origin;
+                        
+                        fetch("/api/sharefile", {
+                            method: "POST",
+                            headers: {
+                                session: getCookie("session_id"),
+                                source: filename,
+                                filename: fileShareWindow.querySelector(".input-group input").value, 
+                                crypto_key: getCryptoKey(),
+                                expires: fileShareWindow.querySelector(".input-group select").selectedIndex
+                            }
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            updateStats();
+                            copyFileUrl(data.path);
+                        })
+                    })
+
+                    const fileShareWindow = document.getElementById("fileShareWindow");
+                    fileShareWindow.querySelector(".win-close").addEventListener("click", () => {
+                        fileShareWindow.querySelector(".input-group input").value = "";
+                        fileShareWindow.querySelector(".input-group select").selectedIndex = 1;
+                        fileShareWindow.querySelector(".win-main").querySelectorAll("p").forEach(pElement => {
+                            pElement.removeAttribute("style");
+                        })
+                        fileShareWindow.style.display = "none"
+                    })
+
+                    const fileSharesWindow = document.getElementById("sharedFilesWindow");
+                    fileSharesWindow.querySelector(".win-close").addEventListener("click", () => {
+                        fileSharesWindow.style.display = "none"
+                    })
+
+                    let rightClickedRow = null;
+                    const sharesTableBody = document.querySelector("#shares-table tbody");
+
+                    sharesTableBody.addEventListener("contextmenu", function(e) {
+                        const row = e.target.closest("tr.context-target");
+                        if (!row) return;
+
+                        e.preventDefault();
+                        rightClickedRow = row;
+
+                        const menu = document.getElementById("custom-menu");
+                        menu.style.left = `${e.pageX}px`;
+                        menu.style.top = `${e.pageY}px`;
+                        menu.style.display = "block";
+                    });
+
+                    document.querySelectorAll(".menu-item").forEach(item => {
+                        item.addEventListener("click", function() {
+                            if (!rightClickedRow) return;
+
+                            const action = this.textContent.trim();
+                            const rowId = rightClickedRow.dataset.id;
+                            if (action == "Revoke") {
+                                revokeSharedFile(rowId);
+                            }
+
+                            document.getElementById("custom-menu").style.display = "none";
+                            rightClickedRow = null;
+                        });
+                    });
+
+                    document.addEventListener("click", function () {
+                        document.getElementById("custom-menu").style.display = "none";
+                    });
+
                     document.getElementById("grid-system").addEventListener("change", (e) => {
                         toggleGridStyle(true);
                     });
+                    
+                    /*
+                    let keyHex = localStorage.getItem("crypto_key");
+                    if (!keyHex) {
+                        keyHex = prompt("Please enter your 64 character hex encryption key:");
+                        if (!keyHex || keyHex.length !== 64) return alert("Invalid key");
+                        localStorage.setItem("crypto_key", keyHex);
+                    }
+                    
+                    const rawKey = Uint8Array.from(32);
+                    for (let i = 0; i < 64; i += 2) {
+                        rawKey[i / 2] = parseInt(keyHex.slice(i, i + 2), 16);
+                    }
+                    const key = await window.crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
 
-                    document.getElementById("upload-form").addEventListener("submit", function (e) {
+                    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                    const fileBuffer = await file.arrayBuffer();
+                    const encryptedBuffer = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, fileBuffer);
+                    
+                    const encryptedBlob = new Blob([iv, new Uint8Array(encryptedBuffer)]);
+                    const formData = new FormData();
+                    formData.append("file", encryptedBlob);
+                    */
+
+                    document.getElementById("upload-form").addEventListener("submit", async function (e) {
                         document.querySelector(".loading-overlay").style.display = "flex";
                         e.preventDefault();
+
                         const fileInput = document.getElementById("upload-file");
                         const file = fileInput.files[0];
+
+                        let key = getCryptoKey();
 
                         const formData = new FormData();
                         formData.append("file", file);
@@ -383,7 +607,8 @@ function toggleGridStyle(override = false) {
                         fetch("/api/upload", {
                             method: "POST",
                             headers: {
-                                "session-id": getCookie("session_id")
+                                "session-id": getCookie("session_id"),
+                                "crypto-key": key
                             },
                             body: formData
                         })
@@ -408,6 +633,9 @@ function toggleGridStyle(override = false) {
                             const li = document.createElement("li");
                             li.className = "file-entry";
 
+                            const filePath = `/uploads/${userData.id}/${encodeURIComponent(file)}`;
+                            li.dataset.filepath = filePath;
+
                             const nameSpan = document.createElement("span");
                             nameSpan.className = "file-name";
                             nameSpan.textContent = file;
@@ -416,17 +644,16 @@ function toggleGridStyle(override = false) {
                             const actionsDiv = document.createElement("div");
                             actionsDiv.className = "file-actions";
 
-                            const downloadLink = document.createElement("a");
-                            downloadLink.href = `/uploads/${userData.id}/${encodeURIComponent(file)}`;
-                            downloadLink.innerHTML = `
+                            const downloadButton = document.createElement("button");
+                            downloadButton.innerHTML = `
                                 <svg class="w-6 h-6 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="white" viewBox="0 0 24 24">
                                 <path fill-rule="evenodd" d="M13 11.15V4a1 1 0 1 0-2 0v7.15L8.78 8.374a1 1 0 1 0-1.56 1.25l4 5a1 1 0 0 0 1.56 0l4-5a1 1 0 1 0-1.56-1.25L13 11.15Z" clip-rule="evenodd"/>
                                 <path fill-rule="evenodd" d="M9.657 15.874 7.358 13H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-2.358l-2.3 2.874a3 3 0 0 1-4.685 0ZM17 16a1 1 0 1 0 0 2h.01a1 1 0 1 0 0-2H17Z" clip-rule="evenodd"/>
                                 </svg>
                                 `;
-                            downloadLink.className = "icon-button";
-                            downloadLink.setAttribute("title", "Download");
-                            downloadLink.setAttribute("target", "_blank");
+                            downloadButton.className = "icon-button";
+                            downloadButton.setAttribute("title", "Download");
+                            downloadButton.onclick = () => downloadEncryptedFile(file, userData.id);
 
                             const deleteButton = document.createElement("button");
                             deleteButton.innerHTML = `
@@ -456,11 +683,13 @@ function toggleGridStyle(override = false) {
                             `;
                             sharebutton.className = "icon-button";
                             sharebutton.setAttribute("title", "Share file");
-                            sharebutton.onclick = () => copyFileUrl(`/uploads/${userData.id}/${encodeURIComponent(file)}`);
+                            let key = getCryptoKey();
+                            sharebutton.onclick = () => shareFileWindow(`/uploads/${userData.id}/${encodeURIComponent(file)}?crypto-key=${key}`);
+                            //sharebutton.onclick = () => copyFileUrl(`/uploads/${userData.id}/${encodeURIComponent(file)}?crypto-key=${key}`);
 
                             actionsDiv.appendChild(sharebutton);
                             actionsDiv.appendChild(hashbutton);
-                            actionsDiv.appendChild(downloadLink);
+                            actionsDiv.appendChild(downloadButton);
                             actionsDiv.appendChild(deleteButton);
 
                             li.appendChild(nameSpan);
