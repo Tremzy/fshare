@@ -108,7 +108,7 @@ app.post("/api/login", (req, res) => {
                         httpOnly: false,
                         maxAge: 7 * 864e5,
                         path: "/",
-                        sameSite: "lax"
+                        sameSite: "Strict"
                     });
                     return res.status(200).send("Authenticated");
                 });
