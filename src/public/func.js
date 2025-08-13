@@ -231,7 +231,7 @@ function toggleGridStyle(override = false) {
 
     if (!override) {
         const savedValue = getCookie("gridStyle");
-        if (savedValue.length == 0 | savedValue == "null") {
+        if (savedValue == null) {
             selector.value = "grid";
             selectedOption = "grid";
         }
@@ -314,9 +314,12 @@ function sharedFilesWindow() {
                     const timestamp = new Date(value * 1000).toLocaleString();
                     value = timestamp;
                 }
+                if (key == "owner") { row.dataset.owner = value; return; }
                 attr.innerHTML = value;
                 row.appendChild(attr);
                 if (key == "id") row.dataset.id = value;
+                if (key == "customname") row.dataset.customname = value;
+                console.log(`${key}: ${value}`)
             })
             sharesTable.querySelector("tbody").appendChild(row);
         })
@@ -554,6 +557,10 @@ function updateStats() {
                             const rowId = rightClickedRow.dataset.id;
                             if (action == "Revoke") {
                                 revokeSharedFile(rowId);
+                            }
+                            else if (action == "Copy link") {
+                                const custompath = `/shares/${rightClickedRow.dataset.owner}/${rightClickedRow.dataset.customname}`;
+                                copyFileUrl(custompath);
                             }
 
                             document.getElementById("custom-menu").style.display = "none";

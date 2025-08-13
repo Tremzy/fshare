@@ -332,7 +332,7 @@ app.get("/api/usershares", (req, res) => {
     db.query("SELECT id FROM users WHERE session = ?", [session], (err, results) => {
         if (err || results.length == 0) return res.status(403).send("Unauthorized");
         const userid = results[0].id;
-        db.query("SELECT id, origin, customname, created, expires FROM shares WHERE owner = ?", [userid], (err, results) => {
+        db.query("SELECT * FROM shares WHERE owner = ?", [userid], (err, results) => {
             if (err) return res.status(500).send("Internal error");
             return res.json(results);
         })
