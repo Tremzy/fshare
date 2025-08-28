@@ -74,6 +74,9 @@ setInterval(() => {
                 db.query("DELETE FROM shares WHERE id = ?", [e.id], (err) => {
                     if (err) console.error(err);
                 });
+                db.query("UPDATE users SET files_shared = files_shared - 1 WHERE id = ?", [e.owner], (err) => {
+                    if (err) console.error(err);
+                })
                 const expiredPath = path.join(__dirname, "shares", String(e.owner), e.customname);
                 fs.unlink(expiredPath, (err) => {
                     console.error(err);
@@ -174,65 +177,87 @@ app.get("/api/userdata", (req, res) => {
 
 
 app.post("/api/upload", (req, res) => {
-    upload(req, res, async (err) => {
-        if (err) {
-            console.error("Upload error:", err);
-            return res.status(500).send("Upload error");
+    const sessionID = req.headers["session-id"];
+    const crypto_key = req.headers["crypto-key"];
+    const originalName = req.headers["file-name"];
+
+    if (!sessionID || !crypto_key || !originalName) {
+        return res.status(400).send("Missing headers");
+    }
+
+    db.query("SELECT id, used, space FROM users WHERE session = ?", [sessionID], async (err, results) => {
+        if (err || results.length === 0) {
+            return res.status(403).send("Unauthorized or database error");
         }
 
-        const sessionID = req.headers["session-id"];
-        const crypto_key = req.headers["crypto-key"];
+        const user = results[0];
+        const availableSpace = user.space - user.used;
 
-        if (!sessionID || !crypto_key) {
-            return res.status(400).send("Invalid headers");
-        }
-        if (!req.file) {
-            return res.status(400).send("Invalid file");
-        }
-
-        db.query("SELECT id, used, space FROM users WHERE session = ?", [sessionID], async (err, results) => {
-            if (err || results.length === 0) {
-                return res.status(403).send("Unauthorized or database error");
-            }
-
-            const user = results[0];
-            const fileSize = req.file.size;
-            const availableSpace = user.space - user.used;
-
-            if (fileSize > availableSpace) {
-                return res.status(413).send("Quota exceeded");
-            }
-
-            const userDir = path.join(__dirname, "uploads", String(user.id));
-            fs.mkdirSync(userDir, { recursive: true });
-            const filename = `${Date.now()}_${req.file.originalname}`;
+        const userDir = path.join(__dirname, "uploads", String(user.id));
+        fs.mkdir(userDir, { recursive: true }, (err) => {
+            if (err) return res.status(500).send("Server error");
+            
+            const filename = `${Date.now()}_${path.basename(originalName)}`;
             const filePath = path.join(userDir, filename);
 
-            try {
-                let keyBuffer = Buffer.alloc(32);
-                Buffer.from(crypto_key).copy(keyBuffer);
+            const iv = crypto.randomBytes(12);
+            let keyBuffer = Buffer.alloc(32);
+            Buffer.from(crypto_key).copy(keyBuffer);
+            
+            const cipher = crypto.createCipheriv("aes-256-gcm", keyBuffer, iv);
 
-                const hash = crypto.createHash("sha256");
-                hash.update(req.file.buffer);
-                const fileHash = hash.digest("hex");
+            const output = fs.createWriteStream(filePath);
+            output.write(iv);
+            
+            let written = iv.length;
 
-                const encryptedBuffer = encryptBuffer(req.file.buffer, keyBuffer);
-                await fs.promises.writeFile(filePath, encryptedBuffer);
+            req.on("data", chunk => {
+                written += chunk.length;
+                if(written > availableSpace) {
+                    req.destroy();
+                    cipher.destroy();
+                    output.destroy();
+                    fs.unlink(filePath, () => {});
+                    return res.status(413).send("Quota exceeded");
+                }
+            });
+            req.pipe(cipher).pipe(output);
 
+            output.on("finish", () => {
+                try {
+                    const authTag = cipher.getAuthTag();
+                    fs.appendFileSync(filePath, authTag);
 
-                db.query("UPDATE users SET used = used + ?, files = files + 1 WHERE id = ?", [encryptedBuffer.length, user.id], (err) => {
-                    if (err) return res.status(500).send("Database error");
-
-                    db.query("INSERT INTO files (filename, owner, hash) VALUES (?, ?, ?)", [filename, user.id, fileHash], (err) => {
+                    db.query("UPDATE users SET used = used + ?, files = files + 1 WHERE id = ?", [written, user.id], (err) => {
                         if (err) return res.status(500).send("Database error");
+                        
+                        const hash = crypto.createHash("sha256");
+                        const hashStream = fs.createReadStream(filePath);
+                        hashStream.on("data", chunk => hash.update(chunk));
+                        hashStream.on("end", () => {
+                            const fileHash = hash.digest("hex");
+                            db.query("INSERT INTO files (filename, owner, hash) VALUES (?, ?, ?)", [filename, user.id, fileHash], (err) => {
+                                if (err) return res.status(500).send("Database error");
+                                res.status(200).send("Upload successful");
+                            });
+                        })
+                    })
+                }
+                catch (e) {
+                    console.error("Encryption finalize error:", e);
+                    res.status(500).send("Failed to save file");
+                }
+            })
+            req.on("error", (err) => {
+                console.error("Request error:", err);
+                fs.unlink(filePath, () => {});
+            });
 
-                        return res.status(200).send("Upload successful");
-                    });
-                });
-            } catch (e) {
-                console.error("Encryption or save error:", e);
-                return res.status(500).send("Failed to encrypt or save file");
-            }
+            output.on("error", (err) => {
+                console.error("Write error:", err);
+                fs.unlink(filePath, () => {});
+                res.status(500).send("Write error");
+            });
         });
     });
 });

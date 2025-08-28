@@ -141,7 +141,7 @@ function toggleFileView(view) {
             }
 
             const extMap = {
-                video: ["mp4", "mov", "webm", "ogg"],
+                video: ["mp4", "mov", "webm", "ogg", "mkv"],
                 image: ["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"],
                 audio: ["mp3", "wav", "ogg"],
                 iso: ["iso"],
@@ -600,29 +600,25 @@ function updateStats() {
                     */
 
                     document.getElementById("upload-form").addEventListener("submit", async function (e) {
-                        document.querySelector(".loading-overlay").style.display = "flex";
                         e.preventDefault();
+                        document.querySelector(".loading-overlay").style.display = "flex";
 
                         const fileInput = document.getElementById("upload-file");
                         const file = fileInput.files[0];
-
-                        let key = getCryptoKey();
-
-                        const formData = new FormData();
-                        formData.append("file", file);
+                        const key = getCryptoKey();
 
                         fetch("/api/upload", {
                             method: "POST",
                             headers: {
                                 "session-id": getCookie("session_id"),
-                                "crypto-key": key
+                                "crypto-key": key,
+                                "file-name": file.name,
+                                "Content-Type": "application/octet-stream"
                             },
-                            body: formData
+                            body: file
                         })
                         .then(res => res.text())
-                        .then(text => {
-                            window.location.reload();
-                        })
+                        .then(text => window.location.reload())
                         .catch(err => console.error("Upload failed:", err));
                     });
 
