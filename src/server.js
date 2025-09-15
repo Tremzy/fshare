@@ -263,7 +263,7 @@ app.post("/api/upload", (req, res) => {
 });
 
 app.post("/api/sharefile", (req, res) => {
-    const { session, source, filename, crypto_key, expires } = req.headers;
+    let { session, source, filename, crypto_key, expires } = req.headers;
     if (!session || !source || !filename || !crypto_key || !expires) {
         console.log(req.headers)
         return res.status(400).send("Invalid headers");
@@ -274,6 +274,8 @@ app.post("/api/sharefile", (req, res) => {
             return res.status(403).send("User not found");
         }
 
+        source = decodeURIComponent(source);
+        filename = decodeURIComponent(filename);
         const userid = results[0].id;
         const expireOptions = [3600, 86400, 604800, 2592000];
         const expireIndex = Number(expires);
@@ -296,6 +298,9 @@ app.post("/api/sharefile", (req, res) => {
                 console.error("Read error:", err);
                 res.status(500).send("Read error");
             });
+
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Transfer-Encoding': 'chunked' });
+            res.write(JSON.stringify({ status: 'decrypting' }) + "\n");
 
             readStream.on('data', chunk => buffers.push(chunk));
             readStream.on('end', () => {
@@ -328,6 +333,7 @@ app.post("/api/sharefile", (req, res) => {
                                 return res.status(500).send("Write failed");
                             }
                             const relativeFilePath = path.join("/shares", userid.toString(), sFileName);
+                            const relHTMLFilePath = path.join("/shares", userid.toString(), encodeURIComponent(sFileName));
                             const currentUNIX = Math.floor(Date.now() / 1000);
                             db.query("INSERT INTO shares (origin, customname, created, expires, owner) VALUES (?, ?, ?, ?, ?)", [sFileSource, sFileName, currentUNIX, currentUNIX + expireSeconds, userid], (err, results) => {
                                 if (err) {
@@ -339,7 +345,7 @@ app.post("/api/sharefile", (req, res) => {
                                     console.log(err)
                                 }
                             })
-                            res.status(200).json({ path: relativeFilePath });
+                            res.end(JSON.stringify({ status: "done", path: relHTMLFilePath }));
                         });
                     });
     

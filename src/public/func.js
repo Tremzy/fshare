@@ -54,7 +54,7 @@ function compareHash(hash1, hash2) {
 }
 
 function copyFileUrl(filepath) {
-    filepath = `http://storage.vastagjaban.hu${filepath}`
+    filepath = `http://${window.location.host}${filepath}`
     const textarea = document.createElement("textarea");
     textarea.value = filepath;
 
@@ -511,11 +511,46 @@ function updateStats() {
                                 expires: fileShareWindow.querySelector(".input-group select").selectedIndex
                             }
                         })
-                        .then(res => res.json())
-                        .then(data => {
-                            updateStats();
-                            copyFileUrl(data.path);
-                        })
+                        .then(res => {
+                            const reader = res.body.getReader();
+                            const decoder = new TextDecoder();
+                            let buffer = "";
+
+                            function read() {
+                                reader.read().then(({ done, value }) => {
+                                    if (done) {
+                                        console.log("stream closed")
+                                        return;
+                                    }
+
+                                    buffer += decoder.decode(value, { stream: true });
+                                    const lines = buffer.split("\n");
+
+                                    for(const line of lines) {
+                                        if(!line.trim()) continue;
+                                        try {
+                                            const data = JSON.parse(line);
+                                            console.log(data)
+                                            if(data.status === "decrypting") {
+                                                console.log("Decrypting...");
+                                                showToast("Decrypting...")
+                                                document.querySelector(".loading-overlay").style.display = "flex";
+                                            } else if(data.status === "done") {
+                                                console.log("Finished:", data.path);
+                                                document.querySelector(".loading-overlay").style.display = "none";
+                                                updateStats();
+                                                copyFileUrl(data.path);
+                                            }
+                                        } catch(e) {
+                                            console.error("Invalid JSON chunk:", line);
+                                        }
+                                    }
+                                    read();
+                                });
+                            }
+                            read();
+                        });
+
                     })
 
                     const fileShareWindow = document.getElementById("fileShareWindow");
@@ -559,7 +594,7 @@ function updateStats() {
                                 revokeSharedFile(rowId);
                             }
                             else if (action == "Copy link") {
-                                const custompath = `/shares/${rightClickedRow.dataset.owner}/${rightClickedRow.dataset.customname}`;
+                                const custompath = `/shares/${rightClickedRow.dataset.owner}/${encodeURIComponent(rightClickedRow.dataset.customname)}`;
                                 copyFileUrl(custompath);
                             }
 
