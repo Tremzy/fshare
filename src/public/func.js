@@ -258,6 +258,8 @@ function toggleGridStyle(override = false) {
 
 function downloadEncryptedFile(filename, userID) {
     let key = getCryptoKey();
+    showToast("Decrypting...")
+    document.querySelector(".loading-overlay").style.display = "flex";
     fetch(`/uploads/${userID}/${encodeURIComponent(filename)}`, {
         headers: {
             "crypto-key": key
@@ -268,6 +270,8 @@ function downloadEncryptedFile(filename, userID) {
         return res.blob();
     })
     .then(blob => {
+        console.log("file received")
+        document.querySelector(".loading-overlay").style.display = "none";
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;

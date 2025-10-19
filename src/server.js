@@ -1,6 +1,5 @@
 const express = require("express");
 const mysql = require("mysql2");
-const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -33,19 +32,6 @@ const db = mysql.createPool({
 });
 
 const saltRounds = 12;
-
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "uploads");
-    },
-    filename: function(req, file, cb) {
-        cb(null, file.fieldname + "-" + Math.floor(+Date.now() / 1000));
-    }
-});
-
-const upload = multer({
-    storage: multer.memoryStorage()
-}).single("file");
 
 function generateSessionID(length) {
     const characters = "qwertzuiopasdfghjklyxcvbnmQWERTZUIOPASDFGHJKLYXCVBNM0123456789";
