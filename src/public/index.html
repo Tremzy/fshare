@@ -87,9 +87,47 @@
                 font-size: 0.85rem;
                 opacity: 0.7;
             }
+
+            .mainholder {
+                width: 100%;
+                display: none;
+                justify-content: center;
+                align-items: center;
+                height: auto;
+                margin-top: 2rem;
+                position: fixed;
+                top: 0;
+            }
+
+            .mainbox {
+                width: 60%;
+                height: 100%;
+                text-align: center;
+                background-color: rgb(255, 174, 0);
+                border-radius: 0.5rem;
+                padding: 1rem;
+                font-size: 24px;
+                color: #454545;
+                display: flex;
+                flex-direction: column;
+                user-select: none;
+            }
+
+            .mainbox h1 {
+                font-size: 30px;
+                margin-top: 0;
+                margin-bottom: 0.5rem;
+            }
         </style>
     </head>
     <body>
+        <div class="mainholder">
+            <div class="mainbox">
+                <h1>Maintenance ahead</h1>
+                <span id="schedate">Scheduled date: </span>
+                <span id="downtime">Downtime: </span>
+            </div>
+        </div>
         <div id="toast" style="
             position: fixed;
             top: 5%;

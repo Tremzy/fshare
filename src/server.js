@@ -32,21 +32,6 @@ const db = mysql.createPool({
   queueLimit: 0
 });
 
-const saltRounds = 12;
-
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "uploads");
-    },
-    filename: function(req, file, cb) {
-        cb(null, file.fieldname + "-" + Math.floor(+Date.now() / 1000));
-    }
-});
-
-const upload = multer({
-    storage: multer.memoryStorage()
-}).single("file");
-
 function generateSessionID(length) {
     const characters = "qwertzuiopasdfghjklyxcvbnmQWERTZUIOPASDFGHJKLYXCVBNM0123456789";
     let result = "";
@@ -54,16 +39,6 @@ function generateSessionID(length) {
         result += characters[Math.floor(Math.random() * characters.length)];
     }
     return result;
-}
-
-function encryptBuffer(buffer, key) {
-    const iv = crypto.randomBytes(12);
-    const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-
-    const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
-    const authTag = cipher.getAuthTag();
-
-    return Buffer.concat([iv, encrypted, authTag]);
 }
 
 setInterval(() => {
@@ -174,73 +149,75 @@ app.get("/api/userdata", (req, res) => {
 
 
 app.post("/api/upload", (req, res) => {
-    upload(req, res, async (err) => {
-        if (err) {
-            console.error("Upload error:", err);
-            return res.status(500).send("Upload error");
-        }
+    const sessionID = req.headers["session-id"];
+    const originalName = req.headers["file-name"];
 
-        const sessionID = req.headers["session-id"];
-        const crypto_key = req.headers["crypto-key"];
-
-        if (!sessionID || !crypto_key) {
-            return res.status(400).send("Invalid headers");
-        }
-        if (!req.file) {
-            return res.status(400).send("Invalid file");
-        }
+    if (!sessionID || !originalName) {
+        return res.status(400).send("Missing headers");
+    }
 
         db.query("SELECT id, used, space FROM users WHERE session = ?", [sessionID], async (err, results) => {
             if (err || results.length === 0) {
                 return res.status(403).send("Unauthorized or database error");
             }
 
-            const user = results[0];
-            const fileSize = req.file.size;
-            const availableSpace = user.space - user.used;
+        const user = results[0];
+        const availableSpace = user.space - user.used;
+        const userDir = path.join(__dirname, "uploads", String(user.id));
 
-            if (fileSize > availableSpace) {
-                return res.status(413).send("Quota exceeded");
-            }
-
-            const userDir = path.join(__dirname, "uploads", String(user.id));
-            fs.mkdirSync(userDir, { recursive: true });
-            const filename = `${Date.now()}_${req.file.originalname}`;
+        fs.mkdir(userDir, { recursive: true }, (err) => {
+            if (err) return res.status(500).send("Server error");
+            
+            const filename = `${Date.now()}_${path.basename(originalName)}`;
             const filePath = path.join(userDir, filename);
 
-            try {
-                let keyBuffer = Buffer.alloc(32);
-                Buffer.from(crypto_key).copy(keyBuffer);
+            let written = 0;
+            const output = fs.createWriteStream(filePath);
+            
+            req.on("data", chunk => {
+                written += chunk.length;
+                if(written > availableSpace) {
+                    req.destroy();
+                    output.destroy();
+                    fs.unlink(filePath, () => {});
+                    return res.status(413).send("Quota exceeded");
+                }
+            });
+            req.pipe(output);
 
-                const hash = crypto.createHash("sha256");
-                hash.update(req.file.buffer);
-                const fileHash = hash.digest("hex");
-
-                const encryptedBuffer = encryptBuffer(req.file.buffer, keyBuffer);
-                await fs.promises.writeFile(filePath, encryptedBuffer);
-
-
-                db.query("UPDATE users SET used = used + ?, files = files + 1 WHERE id = ?", [encryptedBuffer.length, user.id], (err) => {
+            output.on("finish", () => {
+                db.query("UPDATE users SET used = used + ?, files = files + 1 WHERE id = ?", [written, user.id], (err) => {
                     if (err) return res.status(500).send("Database error");
-
-                    db.query("INSERT INTO files (filename, owner, hash) VALUES (?, ?, ?)", [filename, user.id, fileHash], (err) => {
-                        if (err) return res.status(500).send("Database error");
-
-                        return res.status(200).send("Upload successful");
-                    });
+                    
+                    const hash = crypto.createHash("sha256");
+                    const hashStream = fs.createReadStream(filePath);
+                    hashStream.on("data", chunk => hash.update(chunk));
+                    hashStream.on("end", () => {
+                        const fileHash = hash.digest("hex");
+                        db.query("INSERT INTO files (filename, owner, hash) VALUES (?, ?, ?)", [filename, user.id, fileHash], (err) => {
+                            if (err) return res.status(500).send("Database error");
+                            res.status(200).send("Upload successful");
+                        });
+                    })
                 });
-            } catch (e) {
-                console.error("Encryption or save error:", e);
-                return res.status(500).send("Failed to encrypt or save file");
-            }
+            });
+            req.on("error", (err) => {
+                console.error("Request error:", err);
+                fs.unlink(filePath, () => {});
+            });
+
+            output.on("error", (err) => {
+                console.error("Write error:", err);
+                fs.unlink(filePath, () => {});
+                res.status(500).send("Write error");
+            });
         });
     });
 });
 
-app.post("/api/sharefile", (req, res) => {
-    const { session, source, filename, crypto_key, expires } = req.headers;
-    if (!session || !source || !filename || !crypto_key || !expires) {
-        console.log(req.headers)
+app.get("/api/sharefile", (req, res) => {
+    const { session, source } = req.headers;
+    if (!session || !source) {
         return res.status(400).send("Invalid headers");
     }
 
@@ -250,82 +227,65 @@ app.post("/api/sharefile", (req, res) => {
         }
 
         const userid = results[0].id;
-        const expireOptions = [3600, 86400, 604800, 2592000];
-        const expireIndex = Number(expires);
-        const expireSeconds = expireOptions[expireIndex] ?? 86400;
-        const sFileSource = path.basename(source);
-        const sFileName = path.basename(filename);
+        const sFileSource = path.basename(decodeURIComponent(source));
+
         const filepath = path.join(__dirname, "uploads", userid.toString(), sFileSource);
         fs.stat(filepath, (err, stats) => {
             if (err || !stats.isFile()) {
                 return res.status(404).send("File not found");
             }
-    
-            let keyBuffer = Buffer.alloc(32);
-            Buffer.from(crypto_key).copy(keyBuffer);
-    
-            const readStream = fs.createReadStream(filepath);
-            const buffers = [];
-    
-            readStream.on('error', err => {
-                console.error("Read error:", err);
-                res.status(500).send("Read error");
+
+            res.writeHead(200, {
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": `attachment; filename="${encodeURIComponent(sFileSource)}"`
             });
 
-            readStream.on('data', chunk => buffers.push(chunk));
-            readStream.on('end', () => {
-                try {
-                    const fileBuffer = Buffer.concat(buffers);
-                    const iv = fileBuffer.slice(0, 12);
-                    const authTag = fileBuffer.slice(fileBuffer.length - 16);
-                    const encryptedContent = fileBuffer.slice(12, fileBuffer.length - 16);
-    
-                    const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
-                    decipher.setAuthTag(authTag);
-    
-                    const decrypted = Buffer.concat([
-                        decipher.update(encryptedContent),
-                        decipher.final()
-                    ]);
-    
-                    const sharedDir = path.join(__dirname, "shares", userid.toString());
-                    const sharedFilePath = path.join(sharedDir, sFileName);
-    
-                    fs.mkdir(sharedDir, { recursive: true }, (err) => {
-                        if (err) {
-                            console.error("Directory creation failed:", err);
-                            return res.status(500).send("Server error");
-                        }
-    
-                        fs.writeFile(sharedFilePath, decrypted, (err) => {
-                            if (err) {
-                                console.error("Write failed:", err);
-                                return res.status(500).send("Write failed");
-                            }
-                            const relativeFilePath = path.join("/shares", userid.toString(), sFileName);
-                            const currentUNIX = Math.floor(Date.now() / 1000);
-                            db.query("INSERT INTO shares (origin, customname, created, expires, owner) VALUES (?, ?, ?, ?, ?)", [sFileSource, sFileName, currentUNIX, currentUNIX + expireSeconds, userid], (err, results) => {
-                                if (err) {
-                                    return res.status(500).send("Failed to save share");
-                                }
-                            })
-                            db.query("UPDATE users SET files_shared = files_shared + 1 WHERE id = ?", [userid], (err) => {
-                                if(err) {
-                                    console.log(err)
-                                }
-                            })
-                            res.status(200).json({ path: relativeFilePath });
-                        });
-                    });
-    
-                } catch (e) {
-                    console.error("Decryption failed:", e);
-                    res.status(400).send("Decryption failed");
-                }
-            });
+            const readStream = fs.createReadStream(filepath);
+            readStream.pipe(res);
         });
     });
 });
+
+app.post("/api/sharefile/finish", (req, res) => {
+    let { session, source, filename, expires } = req.headers;
+    filename = decodeURIComponent(filename);
+    source = decodeURIComponent(source);
+    const eoptions = [3600, 86400, 604800, 2592000];
+    const esex = eoptions[Number(expires)] ?? 86400;
+    db.query("SELECT id FROM users WHERE session = ?", [session], (err, results) => {
+        const userId = results[0].id;
+        const userDir = path.join(__dirname, "shares", userId.toString());
+        fs.mkdirSync(userDir, { recursive: true });
+
+        const filePath = path.join(userDir, filename);
+        
+        const chunks = []
+        req.on("data", chunk => chunks.push(chunk));
+        req.on("end", () => {
+            const fileBuffer = Buffer.concat(chunks);
+            fs.writeFile(filePath, fileBuffer, err => {
+                if (err) {
+                    console.error("Write failed: ", err);
+                    return res.status(500).send("Internal server error");
+                }
+
+                const readyPath = path.join("/shares", userId.toString(), encodeURIComponent(filename));
+                const currentUNIX = Math.floor(Date.now() / 1000);
+                db.query("INSERT INTO shares (origin, customname, created, expires, owner) VALUES (?, ?, ?, ?, ?)", [source, filename, currentUNIX, currentUNIX + esex, userId], (err, results) => {
+                    if (err) {
+                        return res.status(500).send("Failed to save share");
+                    }
+                })
+                db.query("UPDATE users SET files_shared = files_shared + 1 WHERE  id = ?", [userId], (err) => {
+                    if (err) {
+                        return res.status(500).send("Failed to save share");
+                    }
+                })
+                res.json(JSON.stringify({ status: "done", path: readyPath}));
+            })
+        })
+    });
+})
 
 app.get("/api/usershares", (req, res) => {
     const session = req.headers.session;
@@ -364,14 +324,6 @@ app.post("/api/revokeshare", (req, res) => {
 
 app.get('/uploads/:userId/:filename', (req, res) => {
     const { userId, filename } = req.params;
-    const keyFromHeader = req.headers['crypto-key'];
-    const keyFromQuery = req.query['crypto-key'];
-    const cryptoKey = keyFromHeader || keyFromQuery;
-
-    if (!cryptoKey) {
-        return res.status(400).send("Missing crypto-key header");
-    }
-
     const filePath = path.join(__dirname, 'uploads', userId, filename);
 
     fs.stat(filePath, (err, stats) => {
@@ -379,51 +331,16 @@ app.get('/uploads/:userId/:filename', (req, res) => {
             return res.status(404).send("File not found");
         }
 
-        let keyBuffer = Buffer.alloc(32);
-        Buffer.from(cryptoKey).copy(keyBuffer);
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-        const readStream = fs.createReadStream(filePath);
+        const stream = fs.createReadStream(filePath);
+        stream.pipe(res);
 
-        let iv;
-        let authTag;
-        let decipher;
-        let headerRead = false;
-        let chunks = [];
-        let totalLength = 0;
-
-        const buffers = [];
-        readStream.on('data', chunk => buffers.push(chunk));
-        readStream.on('end', () => {
-            const fileBuffer = Buffer.concat(buffers);
-
-            iv = fileBuffer.slice(0, 12);
-            authTag = fileBuffer.slice(fileBuffer.length - 16);
-            const encryptedContent = fileBuffer.slice(12, fileBuffer.length - 16);
-
-            decipher = crypto.createDecipheriv('aes-256-gcm', keyBuffer, iv);
-            decipher.setAuthTag(authTag);
-
-            try {
-                const decrypted = Buffer.concat([
-                    decipher.update(encryptedContent),
-                    decipher.final()
-                ]);
-
-                res.setHeader('Content-Length', decrypted.length);
-                res.setHeader('Content-Type', 'application/octet-stream');
-                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-                res.send(decrypted);
-            } catch (e) {
-                console.error("Decryption failed:", e);
-                res.status(400).send("Decryption failed");
-            }
-        });
-
-        readStream.on('error', err => {
-            console.error("File read error:", err);
-            res.status(500).send("Internal server error");
-        });
+        stream.on("error", err => {
+            console.error("File stream error: ", err);
+            res.status(500).end("Server error");
+        })
     });
 });
 
