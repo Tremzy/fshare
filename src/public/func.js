@@ -1,3 +1,12 @@
+const maintenance = {
+    "state": "no",
+    "scheduled": "nov. 3. 16:00",
+    "downtime": "30 minutes"
+}
+
+
+
+
 function getCookie(name) {
     const cookies = document.cookie.split("; ");
     for (const cookie of cookies) {
@@ -54,7 +63,7 @@ function compareHash(hash1, hash2) {
 }
 
 function copyFileUrl(filepath) {
-    filepath = `http://${window.location.host}${filepath}`
+    filepath = `https://${window.location.host}${filepath}`
     const textarea = document.createElement("textarea");
     textarea.value = filepath;
 
@@ -81,22 +90,57 @@ function showToast(message) {
         toast.style.opacity = "0";
     }, 2000);
 }
-
-function showImageInspect(title, path) {
+/*
+async function showImageInspect(title, path) {
+    document.querySelector(".inspect-body").innerHTML = "";
     document.querySelector(".inspect-title").innerText = title;
+    const keyData = getCryptoKey();
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(keyData), "AES-GCM", false, ["decrypt"]);
+    const response = await fetch(path)
+    const encryptedData = new Uint8Array(await response.arrayBuffer());
+    const iv = encryptedData.slice(0, 12);
+    const ciphertext = encryptedData.slice(12);
+    const decrypted = await crypto.subtle.decrypt({name: "AES-GCM", iv}, key, ciphertext);
+    const blob = new Blob([decrypted], {type:"image/png"});
+    const url = URL.createObjectURL(blob)
+
     const img = document.createElement("img");
-    img.src = path + `?crypto-key=${getCryptoKey()}`;
+    img.src = url;
+    document.querySelector(".inspect-body").appendChild(img);
+    document.querySelector(".inspect-overlay").style.display = "flex";
+}*/
+
+function showImageInspect(title, url) {
+    document.querySelector(".inspect-body").innerHTML = "";
+    document.querySelector(".inspect-title").innerText = title;
+
+    const img = document.createElement("img");
+    img.src = url;
     document.querySelector(".inspect-body").appendChild(img);
     document.querySelector(".inspect-overlay").style.display = "flex";
 }
 
-function showVideoInspect(title, path) {
+function showVideoInspect(title, url) {
+    document.querySelector(".inspect-body").innerHTML = "";
     document.querySelector(".inspect-title").innerText = title;
+
     const vid = document.createElement("video");
-    vid.src = path + `?crypto-key=${getCryptoKey()}`;
+    vid.src = url;
     vid.setAttribute("controls", "controls")
     document.querySelector(".inspect-body").appendChild(vid);
     document.querySelector(".inspect-overlay").style.display = "flex";
+}
+
+async function createPreviewURL(path, mimeType) {
+    const keyData = getCryptoKey();
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(keyData), { name: "AES-GCM" }, false, ["decrypt"]);
+    const response = await fetch(path);
+    const encryptedData = new Uint8Array(await response.arrayBuffer());
+    const iv = encryptedData.slice(0, 12);
+    const ciphertext = encryptedData.slice(12);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    const blob = new Blob([decrypted], { type: mimeType });
+    return URL.createObjectURL(blob);
 }
 
 function getCryptoKey() {
@@ -163,21 +207,27 @@ function toggleFileView(view) {
             key = getCryptoKey();
             if (fileType === "video") {
                 preview = document.createElement("video");
-                preview.src = filepath + `?crypto-key=${key}`;
-                preview.onclick = () => {
-                    showVideoInspect(filepath.split("/").pop(), filepath);
-                }
+                createPreviewURL(filepath, "video/mp4").then(url => {
+                    preview.src = url
+                    preview.onclick = () => {
+                        showVideoInspect(decodeURIComponent(filepath.split("/").pop()), url);
+                    }
+                });
                 preview.style.cursor = "pointer";
             } else if (fileType === "image") {
                 preview = document.createElement("img");
-                preview.onclick = () => {
-                    showImageInspect(filepath.split("/").pop(), filepath);
-                }
+                createPreviewURL(filepath, "image/png").then(url => {
+                    preview.src = url
+                    preview.onclick = () => {
+                        showImageInspect(decodeURIComponent(filepath.split("/").pop()), url);
+                    }
+                });
                 preview.style.cursor = "pointer";
-                preview.src = filepath + `?crypto-key=${key}`;
             } else if (fileType === "audio") {
                 preview = document.createElement("audio");
-                preview.src = filepath + `?crypto-key=${key}`;
+                createPreviewURL(filepath, "audio/mp3").then(url => {
+                    preview.src = url;
+                })
                 preview.setAttribute("controls", "controls");
             } else if (fileType === "iso") {
                 preview = document.createElement("img");
@@ -260,19 +310,22 @@ function downloadEncryptedFile(filename, userID) {
     let key = getCryptoKey();
     showToast("Decrypting...")
     document.querySelector(".loading-overlay").style.display = "flex";
-    fetch(`/uploads/${userID}/${encodeURIComponent(filename)}`, {
-        headers: {
-            "crypto-key": key
-        }
-    })
+    fetch(`/uploads/${userID}/${encodeURIComponent(filename)}`)
     .then(res => {
         if (!res.ok) throw new Error("Failed to download file");
         return res.blob();
     })
-    .then(blob => {
+    .then(async blob => {
         console.log("file received")
+        const keyData = getCryptoKey();
+        const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(keyData), { name: "AES-GCM" }, false, ["decrypt"]);
+        const encryptedData = new Uint8Array(await blob.arrayBuffer());
+        const iv = encryptedData.slice(0, 12);
+        const ciphertext = encryptedData.slice(12);
+        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+        const decryptedBlob = new Blob([decrypted]);
         document.querySelector(".loading-overlay").style.display = "none";
-        const url = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(decryptedBlob);
         const a = document.createElement("a");
         a.href = url;
         a.download = filename;
@@ -360,7 +413,22 @@ function updateStats() {
 }
 
 
+//LOGIN CODE
 
+
+
+(() => {
+    console.log(window.location.pathname)
+    console.log(window.location.pathname !== "/")
+    if (!window.location.pathname.includes("index.html") && window.location.pathname !== "/") return;
+    document.addEventListener("DOMContentLoaded", () => {
+        if (maintenance.state === "yes") {
+            document.getElementById("schedate").textContent += maintenance.scheduled;
+            document.getElementById("downtime").textContent += maintenance.downtime;
+            document.querySelector(".mainholder").style.display = "flex";
+        }
+    })
+})();
 
 
 
@@ -501,60 +569,55 @@ function updateStats() {
                         }
                     });
 
-                    document.getElementById("generate-share-link").addEventListener("click", () => {
+                    document.getElementById("generate-share-link").addEventListener("click", async () => {
                         const fileShareWindow = document.getElementById("fileShareWindow");
                         const filename = fileShareWindow.dataset.origin;
+                        const expires = fileShareWindow.querySelector(".input-group select").selectedIndex;
+                        const customname = fileShareWindow.querySelector(".input-group input").value;
                         
-                        fetch("/api/sharefile", {
+                        const headers = {
+                            session: getCookie("session_id"),
+                            source: filename,
+                        }
+                        
+                        document.querySelector(".loading-overlay").style.display = "flex";
+                        
+                        const res = await fetch("/api/sharefile", { method: "GET", headers });
+                        
+                        const keyData = getCryptoKey();
+                        const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(keyData), { name: "AES-GCM" }, false, ["decrypt"]);
+
+                        showToast("Downloading...")
+                        const encryptedData = new Uint8Array(await res.arrayBuffer());
+                        const iv = encryptedData.slice(0, 12);
+                        const ciphertext = encryptedData.slice(12);
+                        
+                        //will never show cuz decryption freezes browser frames, but i dont get paid enough to care
+                        showToast("Decrypting...")
+                        
+                        const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+                        const blob = new Blob([decrypted], { type: "application/octet-stream" });
+
+                        showToast("Uploading...");
+
+                        const response = await fetch("/api/sharefile/finish", {
                             method: "POST",
                             headers: {
                                 session: getCookie("session_id"),
-                                source: filename,
-                                filename: fileShareWindow.querySelector(".input-group input").value, 
-                                crypto_key: getCryptoKey(),
-                                expires: fileShareWindow.querySelector(".input-group select").selectedIndex
-                            }
-                        })
-                        .then(res => {
-                            const reader = res.body.getReader();
-                            const decoder = new TextDecoder();
-                            let buffer = "";
-
-                            function read() {
-                                reader.read().then(({ done, value }) => {
-                                    if (done) {
-                                        console.log("stream closed")
-                                        return;
-                                    }
-
-                                    buffer += decoder.decode(value, { stream: true });
-                                    const lines = buffer.split("\n");
-
-                                    for(const line of lines) {
-                                        if(!line.trim()) continue;
-                                        try {
-                                            const data = JSON.parse(line);
-                                            console.log(data)
-                                            if(data.status === "decrypting") {
-                                                console.log("Decrypting...");
-                                                showToast("Decrypting...")
-                                                document.querySelector(".loading-overlay").style.display = "flex";
-                                            } else if(data.status === "done") {
-                                                console.log("Finished:", data.path);
-                                                document.querySelector(".loading-overlay").style.display = "none";
-                                                updateStats();
-                                                copyFileUrl(data.path);
-                                            }
-                                        } catch(e) {
-                                            console.error("Invalid JSON chunk:", line);
-                                        }
-                                    }
-                                    read();
-                                });
-                            }
-                            read();
+                                source: encodeURIComponent(filename),
+                                filename: encodeURIComponent(customname), 
+                                expires: expires,
+                                "Content-Type": "application/octet-stream"
+                            },
+                            body: blob
                         });
 
+                        document.querySelector(".loading-overlay").style.display = "none";
+                        const data = JSON.parse(await response.json());
+                        console.log(data)
+                        console.log(data.path);
+                        updateStats();
+                        copyFileUrl(data.path);
                     })
 
                     const fileShareWindow = document.getElementById("fileShareWindow");
@@ -637,29 +700,42 @@ function updateStats() {
                     const formData = new FormData();
                     formData.append("file", encryptedBlob);
                     */
-
                     document.getElementById("upload-form").addEventListener("submit", async function (e) {
                         e.preventDefault();
                         document.querySelector(".loading-overlay").style.display = "flex";
 
                         const fileInput = document.getElementById("upload-file");
                         const file = fileInput.files[0];
-                        const key = getCryptoKey();
+                        
+                        const keyRaw = getCryptoKey();
+
+
+                        const rawKey = new TextEncoder().encode(keyRaw);
+                        const key = await crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+
+                        const iv = crypto.getRandomValues(new Uint8Array(12));
+                        const algo = { name: "AES-GCM", iv };
+                        const data = await file.arrayBuffer();
+                        const encrypted = await crypto.subtle.encrypt(algo, key, data);
+
+                        const ivAndCipher = new Uint8Array(iv.length + encrypted.byteLength);
+                        ivAndCipher.set(iv, 0);
+                        ivAndCipher.set(new Uint8Array(encrypted), iv.length);
 
                         fetch("/api/upload", {
                             method: "POST",
                             headers: {
                                 "session-id": getCookie("session_id"),
-                                "crypto-key": key,
                                 "file-name": file.name,
                                 "Content-Type": "application/octet-stream"
                             },
-                            body: file
+                            body: ivAndCipher
                         })
                         .then(res => res.text())
-                        .then(text => window.location.reload())
+                        .then(() => window.location.reload())
                         .catch(err => console.error("Upload failed:", err));
                     });
+
 
                     fetch(`/api/files?sid=${session}`)
                     .then(res => res.json())
