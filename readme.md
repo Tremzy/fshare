@@ -48,7 +48,7 @@ It lets users securely upload, store, share, and manage files through a clean we
 ### Steps
 1. **Clone the repository** 📥
    ```bash
-   git clone https://github.com/yourusername/fshare.git
+   git clone https://github.com/Tremzy/fshare.git
    cd fshare
 2. **Install dependencies** 📦
    ```bash
